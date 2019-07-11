@@ -1,0 +1,185 @@
+<html>
+	<head>
+		<title>Snaps</title>
+		<script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+		<script>
+			let polylines = [];
+			let snapDistance = 25;
+
+			let canvas = null;
+			let ctx = null;
+			let curPoint = null;
+			let curPolyline = null;
+			$(document).ready(() => {
+				canvas = document.getElementById('canvas');
+				ctx = canvas.getContext('2d');
+
+				canvas.addEventListener('click', onClick);
+				canvas.addEventListener('mousemove', onMouseMove);
+				document.addEventListener('keyup', onKeyUp);
+				requestAnimationFrame(onTick);
+			});
+
+			function onTick() {
+				render();
+				requestAnimationFrame(onTick);
+			}
+
+			function render() {
+				ctx.clearRect(0, 0, 500, 500);
+				polylines.forEach(p => {
+					drawPolyline(p);
+				});
+				if (curPolyline && curPolyline.length > 0) {
+					drawLine(curPolyline[curPolyline.length - 1], curPoint);
+				}
+			}
+
+			function onKeyUp(evt) {
+				// ESC == 27
+				if (evt.keyCode === 27 && curPoint) {
+					curPoint = null;
+					curPolyline = null;
+				}
+			}
+
+			function onClick(evt) {
+				if (!curPoint) {
+					let clickPoint = clientToCanvas({
+						x: evt.x,
+						y: evt.y
+					});
+					curPolyline = [clickPoint];
+					polylines.push(curPolyline);
+					curPoint = clickPoint;
+				} else {
+					curPolyline.push(curPoint);
+				}
+			}
+			
+			function onMouseMove(evt) {
+				if (!curPoint) { return; }
+				let mousePoint = clientToCanvas({
+					x: evt.x,
+					y: evt.y
+				});
+				let snapPoint = findSnap(mousePoint);
+				curPoint = snapPoint || mousePoint;
+			}
+
+			function findSnap(point) {
+				let nearestSnap = null;
+				let nearestSnapDistance = Infinity;
+				polylines.forEach(l => {
+					l.forEach((p, i) => {
+						if (i === 0) { return; }
+						let line = {
+							start: {x: l[i-1].x, y: l[i-1].y},
+							end: {x: p.x, y: p.y},
+						};
+						let pointOnLine = perpendicularPointOnLine(line, point);
+						if (pointOnLine) {
+							let distanceToLine = perpendicularDistanceToLine(line, point);
+							if (distanceToLine < snapDistance && distanceToLine < nearestSnapDistance) {
+								nearestSnap = pointOnLine;
+							}
+						}
+					});
+				});
+				return nearestSnap;
+			}
+
+			// https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line#Line_defined_by_two_points
+			function perpendicularDistanceToLine(line, point) {
+				return Math.abs((line.end.y - line.start.y)*point.x - (line.end.x - line.start.x)*point.y + line.end.x*line.start.y - line.end.y*line.start.x) / distance(line.start, line.end)
+			}
+
+			// https://stackoverflow.com/questions/5227373/minimal-perpendicular-vector-between-a-point-and-a-line
+			// X == A + ((P-A).D)D
+			function perpendicularPointOnLine(line, point) {
+				let unit = unitForLine(line);
+				let A = line.start;
+				let pMinusA = {x: point.x - A.x, y: point.y - A.y};
+				let dotProduct = dot(pMinusA, unit);
+				let timesUnit = {x: dotProduct*unit.x, y: dotProduct*unit.y};
+				let finalPoint = {
+					x: A.x+timesUnit.x, 
+					y: A.y+timesUnit.y
+				};
+				// Above algorithm is for infinite line; check if inside segment
+				// min/max x and y will be reversed if the line slope is positive versus negative
+				let xBounds = {
+					min: Math.min(line.start.x, line.end.x), 
+					max: Math.max(line.start.x, line.end.x)
+				};
+				let yBounds = {
+					min: Math.min(line.start.y, line.end.y), 
+					max: Math.max(line.start.y, line.end.y)
+				};
+				if (
+					finalPoint.x >= xBounds.min &&
+					finalPoint.x <= xBounds.max &&
+					finalPoint.y >= yBounds.min &&
+					finalPoint.y <= yBounds.max
+				) {
+					return finalPoint;
+				} else {
+					return null;
+				}
+			}
+
+			function pointIsInLineSegment(p1, p2, p3) {
+				return distance(a,c) + distance(c,b) == distance(a,b)
+			}
+
+			function distance(p1, p2) {
+				return Math.sqrt(Math.pow(p2.y - p1.y, 2) + Math.pow(p2.x - p1.x, 2));
+			}
+
+			function dot(v1, v2) {
+				return v1.x*v2.x + v1.y*v2.y;
+			}
+
+			function unitForLine(line) {
+				let length = distance(line.start, line.end);
+				return {
+					x: (line.end.x - line.start.x) / length,
+					y: (line.end.y - line.start.y) / length
+				};
+			}
+
+			function drawLine(start, end) {
+				ctx.lineWidth = 2;
+				ctx.beginPath();
+				ctx.moveTo(start.x, start.y);
+				ctx.lineTo(end.x, end.y);
+				ctx.stroke();
+			}
+
+			function drawPolyline(polyline) {
+				polyline.forEach((p, i) => {
+					if (i > 0) {
+						drawLine(polyline[i-1], p);
+					}
+				});
+			}
+
+			function clientToCanvas(point) {
+				let boundingRect = canvas.getBoundingClientRect();
+				return  {
+					x: point.x - boundingRect.x, 
+					y: point.y - boundingRect.y
+				};
+			}
+
+		</script>
+		<style>
+			#canvas {
+				background-color: #f2f2f2;
+			}
+		</style>
+	</head>
+	<body>
+		<canvas id="canvas" width="500" height="500"></canvas>
+	</body>
+</html>
